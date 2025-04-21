@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SpaceX Rocket Landing Game</title>
+    <style>
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 0 auto;
+        }
+        #restartButton {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <button id="restartButton" onclick="restartGame()">Restart</button>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const restartButton = document.getElementById('restartButton');
+
+        // Rocket object
+        let rocket = {
+            x: 400, y: 100, width: 20, height: 40,
+            vx: 0, vy: 0, angle: 0,
+            thrust: 0.1, gravity: 0.05, fuel: 100
+        };
+
+        // Game variables
+        let score = 0;
+        let terrain = [];
+        let flatPositions = []; // Store flat spot positions globally
+        let gameState = 'start'; // 'start', 'playing', 'ended'
+        const terrainHeight = 500;
+
+        // Keyboard controls
+        let keys = { ArrowUp: false, ArrowLeft: false, ArrowRight: false };
+        window.addEventListener('keydown', (e) => { if (e.key in keys) keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { if (e.key in keys) keys[e.key] = false; });
+
+        // Generate terrain with more flat spots and less variation
+        function generateTerrain() {
+            flatPositions = []; // Reset flat positions
+            let currentHeight = terrainHeight;
+            terrain = [];
+            for (let x = 0; x < canvas.width; x++) {
+                terrain.push(currentHeight);
+                currentHeight += (Math.random() - 0.5) * 4; // ±2 variation
+                currentHeight = Math.max(100, Math.min(currentHeight, canvas.height - 50));
+            }
+            // Add 5 wider flat spots
+            let flatSpots = 5;
+            let flatWidth = 100;
+            for (let i = 0; i < flatSpots; i++) {
+                let x = Math.floor(Math.random() * (canvas.width - flatWidth));
+                let height = terrain[x];
+                for (let j = x; j < x + flatWidth && j < canvas.width; j++) {
+                    terrain[j] = height;
+                }
+                flatPositions.push({ x: x, width: flatWidth });
+            }
+        }
+        generateTerrain();
+
+        // Stars for background
+        let stars = [];
+        for (let i = 0; i < 100; i++) {
+            stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 2 + 1 });
+        }
+        function drawStars() {
+            ctx.fillStyle = 'white';
+            stars.forEach(star => {
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        // Draw terrain with green flat spots
+        function drawTerrain() {
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height);
+            ctx.lineTo(0, terrain[0]);
+            for (let x = 1; x < canvas.width; x++) {
+                ctx.lineTo(x, terrain[x]);
+            }
+            ctx.lineTo(canvas.width, canvas.height);
+            ctx.closePath();
+            ctx.fillStyle = 'gray';
+            ctx.fill();
+
+            // Highlight flat spots in green
+            ctx.strokeStyle = 'green';
+            ctx.lineWidth = 2;
+            flatPositions.forEach(spot => {
+                ctx.beginPath();
+                ctx.moveTo(spot.x, terrain[spot.x]);
+                ctx.lineTo(spot.x + spot.width, terrain[spot.x]);
+                ctx.stroke();
+            });
+        }
+
+        // Draw rocket
+        function drawRocket() {
+            ctx.save();
+            ctx.translate(rocket.x, rocket.y);
+            ctx.rotate(rocket.angle * Math.PI / 180);
+            ctx.beginPath();
+            ctx.moveTo(0, -rocket.height / 2);
+            ctx.lineTo(rocket.width / 2, rocket.height / 2);
+            ctx.lineTo(-rocket.width / 2, rocket.height / 2);
+            ctx.closePath();
+            ctx.fillStyle = 'silver';
+            ctx.fill();
+            if (keys.ArrowUp && rocket.fuel > 0) {
+                ctx.beginPath();
+                ctx.moveTo(-rocket.width / 4, rocket.height / 2);
+                ctx.lineTo(rocket.width / 4, rocket.height / 2);
+                ctx.lineTo(0, rocket.height / 2 + 20);
+                ctx.closePath();
+                ctx.fillStyle = 'orange';
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        // Draw UI with speed and angle indicators
+        function drawUI() {
+            ctx.fillStyle = 'black';
+            ctx.font = '16px Arial';
+            ctx.fillText(`Fuel: ${Math.floor(rocket.fuel)}`, 10, 20);
+            ctx.fillText(`Score: ${score}`, 10, 40);
+
+            if (gameState === 'playing') {
+                ctx.fillText(`Vertical Speed: ${rocket.vy.toFixed(2)}`, 10, 60);
+                ctx.fillText(`Horizontal Speed: ${rocket.vx.toFixed(2)}`, 10, 80);
+                ctx.fillText(`Angle: ${rocket.angle.toFixed(1)}°`, 10, 100);
+            }
+
+            if (gameState === 'start') {
+                ctx.fillStyle = 'white';
+                ctx.font = '30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('SpaceX Rocket Landing', canvas.width / 2, 200);
+                ctx.font = '20px Arial';
+                ctx.fillText('Use arrow keys: Up to thrust, Left/Right to rotate', canvas.width / 2, 250);
+                ctx.fillText('Land on flat spots with low speed and upright', canvas.width / 2, 280);
+                ctx.fillText('Press any arrow key to start', canvas.width / 2, 310);
+            } else if (gameState === 'ended') {
+                ctx.fillStyle = 'red';
+                ctx.font = '40px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2 - 50);
+                ctx.fillStyle = 'black';
+                ctx.font = '20px Arial';
+                ctx.fillText(rocket.landed ? 'Safely Landed!' : 'Crashed!', canvas.width / 2, canvas.height / 2);
+                ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 30);
+                restartButton.style.display = 'block';
+            }
+            ctx.textAlign = 'left';
+        }
+
+        // Update rocket physics and check landing with relaxed conditions
+        function updateRocket() {
+            if (gameState !== 'playing') return;
+
+            rocket.vy += rocket.gravity;
+            if (keys.ArrowLeft && rocket.fuel > 0) {
+                rocket.angle -= 1;
+                rocket.fuel -= 0.05;
+            }
+            if (keys.ArrowRight && rocket.fuel > 0) {
+                rocket.angle += 1;
+                rocket.fuel -= 0.05;
+            }
+            if (keys.ArrowUp && rocket.fuel > 0) {
+                let angleRad = rocket.angle * Math.PI / 180;
+                rocket.vx += Math.sin(angleRad) * rocket.thrust;
+                rocket.vy -= Math.cos(angleRad) * rocket.thrust;
+                rocket.fuel -= 0.1;
+            }
+
+            rocket.x += rocket.vx;
+            rocket.y += rocket.vy;
+
+            if (rocket.x < rocket.width / 2) rocket.x = rocket.width / 2;
+            if (rocket.x > canvas.width - rocket.width / 2) rocket.x = canvas.width - rocket.width / 2;
+            if (rocket.y < rocket.height / 2) rocket.y = rocket.height / 2;
+
+            let terrainY = terrain[Math.floor(rocket.x)];
+            if (rocket.y + rocket.height / 2 > terrainY) {
+                let isFlat = true;
+                let checkWidth = Math.floor(rocket.width / 2);
+                for (let i = Math.floor(rocket.x - checkWidth); i <= Math.floor(rocket.x + checkWidth); i++) {
+                    if (i < 0 || i >= canvas.width) continue;
+                    if (terrain[i] !== terrain[Math.floor(rocket.x)]) {
+                        isFlat = false;
+                        break;
+                    }
+                }
+                // Relaxed landing conditions
+                if (isFlat && Math.abs(rocket.vy) < 1.5 && Math.abs(rocket.vx) < 1.5 && Math.abs(rocket.angle) < 10) {
+                    rocket.landed = true;
+                    score += 100 + Math.floor(rocket.fuel);
+                } else {
+                    rocket.landed = false;
+                }
+                gameState = 'ended';
+            }
+        }
+
+        // Restart the game
+        function restartGame() {
+            rocket = { x: 400, y: 100, width: 20, height: 40, vx: 0, vy: 0, angle: 0, thrust: 0.1, gravity: 0.05, fuel: 100 };
+            generateTerrain();
+            gameState = 'playing';
+            restartButton.style.display = 'none';
+        }
+
+        // Game loop
+        function gameLoop() {
+            let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'lightblue');
+            gradient.addColorStop(1, 'darkblue');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawStars();
+            drawTerrain();
+            drawRocket();
+            drawUI();
+
+            if (gameState === 'playing') updateRocket();
+            if (gameState === 'start' && (keys.ArrowUp || keys.ArrowLeft || keys.ArrowRight)) gameState = 'playing';
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>

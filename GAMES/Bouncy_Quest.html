@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paddle-Ball Game</title>
+    <style>
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            margin: 20px auto;
+        }
+
+        #gameCanvas {
+            background: linear-gradient(to bottom, #0000ff, #800080);
+            width: 100%;
+            height: 100%;
+        }
+
+        #score, #lives {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+        }
+
+        #lives {
+            left: 150px;
+        }
+
+        #startButton, #musicToggle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            font-size: 20px;
+            background-color: #ff00ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #startButton:hover, #musicToggle:hover {
+            background-color: #cc00cc;
+        }
+
+        #musicToggle {
+            top: 10px;
+            right: 10px;
+            left: auto;
+            transform: none;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 36px;
+            display: none;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="score">Score: 0</div>
+        <div id="lives">Lives: 3</div>
+        <button id="startButton">Start</button>
+        <div id="gameOver">Game Over<br>Your Score: <span id="finalScore">0</span></div>
+        <button id="musicToggle">Mute Music</button>
+    </div>
+    <script>
+        // Get DOM elements
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+        const livesDisplay = document.getElementById('lives');
+        const startButton = document.getElementById('startButton');
+        const gameOverDisplay = document.getElementById('gameOver');
+        const finalScoreDisplay = document.getElementById('finalScore');
+        const musicToggle = document.getElementById('musicToggle');
+
+        // Game objects
+        const ball = {
+            x: canvas.width / 2,
+            y: canvas.height - 30,
+            radius: 10,
+            dx: 2,
+            dy: -2
+        };
+
+        const paddle = {
+            width: 100,
+            height: 20,
+            x: (canvas.width - 100) / 2,
+            speed: 7
+        };
+
+        // Game state variables
+        let score = 0;
+        let lives = 3;
+        let gameState = 'ready';
+        let leftPressed = false;
+        let rightPressed = false;
+        let musicEnabled = true;
+
+        // Audio setup (Note: Replace with actual audio file paths)
+        const paddleHitSound = new Audio('https://www.soundjay.com/buttons/beep-01a.mp3');
+        const wallHitSound = new Audio('https://www.soundjay.com/buttons/beep-02.mp3');
+        const lifeLostSound = new Audio('https://www.soundjay.com/buttons/beep-03.mp3');
+        const backgroundMusic = new Audio('https://www.soundjay.com/music/midnight-ride-01a.mp3');
+        backgroundMusic.loop = true;
+
+        // Event listeners for controls
+        document.addEventListener('keydown', keyDownHandler);
+        document.addEventListener('keyup', keyUpHandler);
+        startButton.addEventListener('click', startGame);
+        musicToggle.addEventListener('click', toggleMusic);
+
+        function keyDownHandler(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'a') leftPressed = true;
+            else if (e.key === 'ArrowRight' || e.key === 'd') rightPressed = true;
+        }
+
+        function keyUpHandler(e) {
+            if (e.key === 'ArrowLeft' || e.key === 'a') leftPressed = false;
+            else if (e.key === 'ArrowRight' || e.key === 'd') rightPressed = false;
+        }
+
+        // Start or restart the game
+        function startGame() {
+            gameState = 'playing';
+            lives = 3;
+            score = 0;
+            resetBall();
+            startButton.style.display = 'none';
+            gameOverDisplay.style.display = 'none';
+            if (musicEnabled) backgroundMusic.play();
+            updateUI();
+        }
+
+        // Reset ball position
+        function resetBall() {
+            ball.x = canvas.width / 2;
+            ball.y = canvas.height - 30;
+            ball.dx = 2;
+            ball.dy = -2;
+        }
+
+        // Toggle background music
+        function toggleMusic() {
+            if (musicEnabled) {
+                backgroundMusic.pause();
+                musicToggle.textContent = 'Unmute Music';
+            } else {
+                backgroundMusic.play();
+                musicToggle.textContent = 'Mute Music';
+            }
+            musicEnabled = !musicEnabled;
+        }
+
+        // Update game state
+        function update() {
+            // Paddle movement
+            if (leftPressed && paddle.x > 0) paddle.x -= paddle.speed;
+            else if (rightPressed && paddle.x + paddle.width < canvas.width) paddle.x += paddle.speed;
+
+            // Ball movement
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+
+            // Wall collisions
+            if (ball.x + ball.radius > canvas.width || ball.x - ball.radius < 0) {
+                ball.dx = -ball.dx;
+                wallHitSound.play();
+            }
+            if (ball.y - ball.radius < 0) {
+                ball.dy = -ball.dy;
+                wallHitSound.play();
+            }
+
+            // Bottom collision (paddle or miss)
+            if (ball.y + ball.radius > canvas.height) {
+                if (ball.x > paddle.x && ball.x < paddle.x + paddle.width) {
+                    ball.dy = -ball.dy;
+                    score++;
+                    ball.dx *= 1.05; // Slight speed increase
+                    ball.dy *= 1.05;
+                    paddleHitSound.play();
+                } else {
+                    lives--;
+                    lifeLostSound.play();
+                    if (lives > 0) {
+                        resetBall();
+                    } else {
+                        gameState = 'game over';
+                        gameOverDisplay.style.display = 'block';
+                        finalScoreDisplay.textContent = score;
+                        startButton.style.display = 'block';
+                        startButton.textContent = 'Restart';
+                        backgroundMusic.pause();
+                    }
+                }
+                updateUI();
+            }
+        }
+
+        // Update UI elements
+        function updateUI() {
+            scoreDisplay.textContent = `Score: ${score}`;
+            livesDisplay.textContent = `Lives: ${lives}`;
+        }
+
+        // Draw game elements
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw ball
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = 'yellow';
+            ctx.fill();
+            ctx.closePath();
+
+            // Draw paddle
+            ctx.beginPath();
+            ctx.rect(paddle.x, canvas.height - paddle.height, paddle.width, paddle.height);
+            ctx.fillStyle = 'green';
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        // Main game loop
+        function gameLoop() {
+            if (gameState === 'playing') {
+                update();
+                draw();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game loop
+        gameLoop();
+    </script>
+</body>
+</html>
